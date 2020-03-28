@@ -138,28 +138,16 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
                 model.zero_grad()
                 global_step += 1
 
-                #保存训练过程中得到的模型
-                if global_step % args.save_steps == 0:
-                    output_dir = os.path.join(args.output_dir,f'model_checkpoint_epoch_{num}/checkpoint-{global_step}')
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
+               
+        #训练一个epoch保存一个模型
+        output_dir = os.path.join(args.output_dir,f'model_checkpoint_epoch_{num}')
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-                    print('')#避免输出信息都在同一行
-                    # logger.info(f'save model checkpoint-{global_step} to {output_dir} ')
-                    model.save_pretrained(output_dir)#保存模型
-                    torch.save(args,os.path.join(output_dir,'train_args.bin'))#保存训练过程中args的一些信息
-
-                #针对：一个epoch包含52个batch，save_steps = 10,剩余两个batch时无法保存的情况
-                elif (len(train_data) - global_step) < args.save_steps:
-                    output_dir = os.path.join(args.output_dir, f'model_checkpoint_epoch_{num}/checkpoint-{global_step}')
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-
-                    print('')  # 避免输出信息都在同一行
-                    # logger.info(f'save model checkpoint-{global_step} to {output_dir} ')
-                    model.save_pretrained(output_dir)  # 保存模型
-                    torch.save(args, os.path.join(output_dir, 'train_args.bin'))  # 保存训练过程中args的一些信息
-
+        print('')#避免输出信息都在同一行
+        # logger.info(f'save model checkpoint-{global_step} to {output_dir} ')
+        model.save_pretrained(output_dir)#保存模型
+       
         #*****一个epoch训练结束以后，进行验证*****
         print('')
         logger.info(f'****************Valid epoch-{num}****************')
@@ -287,8 +275,8 @@ def run(args):
 
     if args.do_train == 1:
 
-        # logger.info('划分训练数据和验证数据')
-        # split_data(args=args, file_name_or_path=args.file_name_or_path)
+        logger.info('划分训练数据和验证数据')
+        split_data(args=args, file_name_or_path=args.file_name_or_path)
 
         logger.info('加载训练数据和验证数据')
         train_data, train_dataloader = load_dataset(args=args,model_name_or_path=args.model_name_or_path,type='train')
