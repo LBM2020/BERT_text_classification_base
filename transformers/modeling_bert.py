@@ -1,25 +1,3 @@
-Skip to content
-Search or jump to…
-
-Pull requests
-Issues
-Marketplace
-Explore
- 
-@LBMYJ 
-huggingface
-/
-transformers
-1k
-526
-24.2k5.6k
- Code Issues 354 Pull requests 64 Actions Projects 1 Wiki Security Insights
-transformers/src/transformers/modeling_bert.py / 
-@LysandreJik LysandreJik Documentation (#2989)
-bb7c468 on 26 Feb
-@LysandreJik@aaugustin@alberduris@wietsedv@sshleifer@srush@r0mainK@asivokon@gentaiscool@julien-c@monologg
-1508 lines (1231 sloc)  69.3 KB
-  
 # coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -1461,15 +1439,4 @@ class BertForQuestionAnswering(BertPreTrainedModel):
             outputs = (total_loss,) + outputs
 
         return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)
-© 2020 GitHub, Inc.
-Terms
-Privacy
-Security
-Status
-Help
-Contact GitHub
-Pricing
-API
-Training
-Blog
-About
+
