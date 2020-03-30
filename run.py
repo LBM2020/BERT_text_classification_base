@@ -181,27 +181,36 @@ def valid(args,model,device,valid_dataloader,valid_data):
             #***计算损失***
             tmp_eval_loss, logits = outputs[:2]#1）tmp_eval_loss是损失函数值。2）logits是模型对验证集的预测概率值，例如二分类时,logits = [0.4,0.6]
 
-            labels.append(inputs['labels'])#获取每个batch的真实标签，用于计算混淆矩阵
-        if preds is None:
-            #第一个batch时，preds为空
-            preds = logits.detach().cpu().numpy()
-            out_label_ids = inputs['labels'].detach().cpu().numpy()
-        else:
-            #自第二个batch开始，将preds进行追加，例如第一个batch的preds为[[0.4,0.6],[0.3,0.7]],第二个batch的preds为[[0.2,0.8],[0.6,0.4]]
-            #则追加（np.append）以后preds的值为[[0.4,0.6],[0.3,0.7],[0.2,0.8],[0.6,0.4]],其中每一个子list代表一个样本分属两个类别的概率
-            #最后使用np.argmax对追加后的整个preds进行所有样本的类别判断
-            preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-            out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+            labels.extend(inputs['labels'])#获取每个batch的真实标签，用于计算混淆矩阵
+            preds_list.extend(logits.detach().cpu().numpy())
+#         if preds is None:
+#             #第一个batch时，preds为空
+#             preds = logits.detach().cpu().numpy()
+#             out_label_ids = inputs['labels'].detach().cpu().numpy()
+#         else:
+#             #自第二个batch开始，将preds进行追加，例如第一个batch的preds为[[0.4,0.6],[0.3,0.7]],第二个batch的preds为[[0.2,0.8],[0.6,0.4]]
+#             #则追加（np.append）以后preds的值为[[0.4,0.6],[0.3,0.7],[0.2,0.8],[0.6,0.4]],其中每一个子list代表一个样本分属两个类别的概率
+#             #最后使用np.argmax对追加后的整个preds进行所有样本的类别判断
+#             preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+#             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
         pbar(step)
 
         #***每训练完一个epoch，清空cuda缓存***
     if 'cuda' in str(device):
         torch.cuda.empty_cache()
-
-    pred_label = np.argmax(preds, axis=1)
-    result = compute_metrics(preds=pred_label,labels=out_label_ids)
-    results.update(result)
+    
+    true_label = []
+    for line in np.array(labels):
+        true_label.append(np.array(line.detach().cpu().numpy()))
+    
+    pred_labels = np.array(pred_labels)
+    terget_names = ['一类别','二类别']#一类别对应数据中标签0所对应的实际类别名字，例如数据中类别关系为[‘体育’：0，‘娱乐’：1]，
+                                     #则target_names = ['体育','娱乐']
+    print(classification_report(y_true=true_label, y_pred=pred_label, target_names=target_names))
+#     pred_label = np.argmax(preds, axis=1)
+#     result = compute_metrics(preds=pred_label,labels=out_label_ids)
+#     results.update(result)
     #***输出该epoch验证集的混淆矩阵***
     # true_label = labels
     # pred_label = np.argmax(preds, axis=1)
