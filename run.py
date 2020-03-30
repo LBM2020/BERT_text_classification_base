@@ -162,6 +162,7 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
 def valid(args,model,device,valid_dataloader,valid_data):
 
     #*****开始验证*****
+    preds_list = []
     results = {}
     preds = None
     out_label_ids = None
