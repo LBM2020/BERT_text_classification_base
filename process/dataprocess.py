@@ -125,34 +125,35 @@ class processer():
 
         features_input_ids, features_attention_mask,features_token_type_ids,features_input_len,features_label= [],[],[],[],[]
         for split_features in features:
-            split_features_input_ids = self.flat(split_features=split_features,f_type='input_ids')
-            features_input_ids.append(split_features_input_ids)
+            split_features_input_ids, split_features_attention_mask,split_features_token_type_ids,split_features_input_len,split_features_label= [],[],[],[],[]
+            
+            split_features_input_ids.append(split_features_input_ids)
+            split_features_attention_mask.append(split_features_attention_mask)
+            split_features_token_type_ids.append(split_features_token_type_ids)
+            split_features_input_len.append(split_features_input_len)
+            split_features_label.append(split_features_label)
 
-            split_features_attention_mask = self.flat(split_features=split_features, f_type='attention_mask')
-            features_attention_mask.append(split_features_attention_mask)
+        features_input_ids.extend(split_features_input_ids)
+        features_attention_mask.extend(split_features_attention_mask)
+        features_token_type_ids.extend(split_features_token_type_ids)
+        features_input_len.extend(split_features_input_len)
+        features_attention_mask.extend(split_features_attention_mask)
+    
+    features_input_ids = torch.tensor(features_input_ids)
+    features_attention_mask = torch.tensor(features_attention_mask)
+    features_token_type_ids = torch.tensor(features_token_type_ids)
+    features_input_len = torch.tensor(features_input_len)
+    features_attention_mask = torch.tensor(features_attention_mask)
+    
+       
+    print(all_input_ids.shape)
+    print(all_attention_mask.shape)
+    print(all_token_type_ids.shape)
+    print(all_lens.shape)
+    print(all_labels.shape)
 
-            split_features_token_type_ids = self.flat(split_features=split_features, f_type='token_type_ids')
-            features_token_type_ids.append(split_features_token_type_ids)
-
-            split_features_input_len = self.flat(split_features=split_features, f_type='input_len')
-            features_input_len.append(split_features_input_len)
-
-            split_features_label = self.flat(split_features=split_features, f_type='label')
-            features_label.append(split_features_label)
-
-        all_input_ids = torch.tensor([input_ids for input_ids in features_input_ids], dtype=torch.long)
-        all_attention_mask = torch.tensor([attention_mask for attention_mask in features_attention_mask], dtype=torch.long)
-        all_token_type_ids = torch.tensor([token_type_ids for token_type_ids in features_token_type_ids], dtype=torch.long)
-        all_lens = torch.tensor([sum(input_len) for input_len in features_input_len], dtype=torch.long)
-        all_labels = torch.tensor([label for label in features_label], dtype=torch.long)
-        print(all_input_ids.shape)
-        print(all_attention_mask.shape)
-        print(all_token_type_ids.shape)
-        print(all_lens.shape)
-        print(all_labels.shape)
-
-        dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_labels)
-        return dataset
+    dataset = TensorDataset(features_input_ids, features_attention_mask, features_token_type_ids, features_input_len, features_attention_mask)
+    return dataset
 
         #原版
         # all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
@@ -162,27 +163,6 @@ class processer():
         # all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
         # dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_lens, all_labels)
         # return dataset
-
-    def flat(self,split_features,f_type):
-        split_features_list = []
-        if f_type == 'input_ids':
-            for f in split_features:
-                split_features_list.extend(f.input_ids)
-        elif f_type == 'attention_mask':
-            for f in split_features:
-                split_features_list.extend(f.attention_mask)
-        elif f_type == 'token_type_ids':
-            for f in split_features:
-                split_features_list.extend(f.token_type_ids)
-        elif f_type == 'input_len':
-            for f in split_features:
-                split_features_list.append(f.input_len)
-        elif f_type == 'label':
-            for f in split_features:
-                split_features_list.append(f.label)
-                break
-
-        return split_features_list
 
 
 
