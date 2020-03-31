@@ -69,7 +69,7 @@ class TrainingMonitor():
                 plt.savefig(str(self.paths[key]))
                 plt.close()
  class TrainLoss():
-    def train_loss(self,steps,losses,epoch,args):
+    def train_loss(self,steps,losses,epoch,args,type):
         plt.plot(steps,losses,'r-')#r代表red红色，-代表实线
         plt.xlabel('step')#设置xy轴的名称
         plt.ylabel('loss')
@@ -77,6 +77,12 @@ class TrainingMonitor():
         save_path = Path(f'{args.output_dir}/train_loss')
         if not save_path.exists():
             os.mkdir(save_path)
+        if type == 'train':
+            plt.savefig(f'{save_path}/loss_step in train_epoch{epoch}.jpg')
+        elif type == 'valid':
+            plt.savefig(f'{save_path}/loss_step in valid_epoch{epoch}.jpg')
+        else:
+            raise ValueError
         plt.savefig(f'{save_path}/loss_step in epoch{epoch}.jpg')
         plt.close()#一定要close，否则会出现缓存，将第一张图片的内容打印在第二张图片上
         
