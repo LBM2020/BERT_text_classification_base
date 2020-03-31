@@ -1118,9 +1118,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
         """
         
         #***对输入数据进行变形，以符合BERT所需的数据格式***
-        input_ids = input_ids.view(-1,input_ids.size(-1))
-        attention_mask = attention_mask.view(-1,attention_mask.size(-1))
-        token_type_ids = token_type_ids.view(-1,token_type_ids.size(-1))
+#         input_ids = input_ids.view(-1,input_ids.size(-1))
+#         attention_mask = attention_mask.view(-1,attention_mask.size(-1))
+#         token_type_ids = token_type_ids.view(-1,token_type_ids.size(-1))
         
         outputs = self.bert(
             input_ids,
@@ -1153,8 +1153,8 @@ class BertForSequenceClassification(BertPreTrainedModel):
             else:
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            outputs = (loss,) + outputs
-
+#             outputs = (loss,) + outputs
+            outputs =[loss,logits]
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
 
