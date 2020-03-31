@@ -167,6 +167,8 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
         #*****一个epoch训练结束以后，进行验证*****
         print('')
         logger.info(f'****************Valid epoch-{num}****************')
+        logger.info("  Num examples = %d", len(valid_data))
+        logger.info("  Batch size = %d", args.valid_batch_size)
         valid(args=args,model=model,device=device,valid_data=valid_data,valid_dataloader=valid_dataloader)
                     # tokenizer.save_vocabulary(vocab_path=output_dir)
 
@@ -237,13 +239,13 @@ def valid(args,model,device,valid_dataloader,valid_data):
 
     print('')#避免输出信息都在同一行
     #***相关信息***
-    logger.info("  Num examples = %d", len(valid_data))
-    logger.info("  Batch size = %d", args.valid_batch_size)
+#     logger.info("  Num examples = %d", len(valid_data))
+#     logger.info("  Batch size = %d", args.valid_batch_size)
     #logger.info("******** Eval results {} ********".format(prefix))
-    for key in sorted(result.keys()):
-        print(" dev: %s = %s", key, str(result[key]))
+#     for key in sorted(result.keys()):
+#         print(" dev: %s = %s", key, str(result[key]))
 
-    return results
+#     return results
 
 def predict(predict_model_name_or_path,pre_data,pre_dataloader):
 
