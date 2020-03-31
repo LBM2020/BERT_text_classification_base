@@ -22,6 +22,7 @@ from tools.common import seed_everything
 from process.splitdata import split_data,write_pre_result_to_file
 
 from callback.progressbar import ProgressBar
+from callback.trainingmonitor import TrainLoss
 logger = logging.getLogger()
 
 def load_dataset(args,model_name_or_path,type):
@@ -69,6 +70,7 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
 
     pro = processer()
     labellist = pro.get_labels()
+    trainloss = TrainLoss()
 
     #*****加载模型*****
     model = BertForSequenceClassification
@@ -113,10 +115,18 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
     seed_everything(args.seed)
 
     for num in range(args.num_train_epochs):
+        all_steps = 0
+        steps = []
+        losses = []
+        
         global_step = 0
         logger.info(f'****************Train epoch-{num}****************')
         pbar = ProgressBar(n_total=len(train_dataloader),desc='Train')
         for step,batch in enumerate(train_dataloader):
+            #***存储step用于绘制Loss曲线***
+            all_steps += 1
+            steps.append(all_steps)
+            
             model.train()
 
             #***输入模型进行计算***
@@ -128,7 +138,10 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
             loss = outputs[0]
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)#梯度裁剪
-
+            
+            #***存储loss用于绘制loss曲线***
+            losses.append(loss.detach().cpu().numpy())
+            
             #***优化器进行优化***
             pbar(step, {'loss': loss.item()})
             tr_loss += loss.item()
@@ -148,6 +161,9 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
         # logger.info(f'save model checkpoint-{global_step} to {output_dir} ')
         model.save_pretrained(output_dir)#保存模型
        
+        #***训练一个epoch绘制一个Loss曲线***
+        trainloss.train_loss(steps,losses,num,args)
+        
         #*****一个epoch训练结束以后，进行验证*****
         print('')
         logger.info(f'****************Valid epoch-{num}****************')
