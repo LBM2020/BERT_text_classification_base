@@ -116,8 +116,8 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
 
     for num in range(args.num_train_epochs):
         all_steps = 0
-        steps = []
-        losses = []
+        train_steps = []
+        train_losses = []
         
         global_step = 0
         logger.info(f'****************Train epoch-{num}****************')
@@ -125,7 +125,7 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
         for step,batch in enumerate(train_dataloader):
             #***存储step用于绘制Loss曲线***
             all_steps += 1
-            steps.append(all_steps)
+            train_steps.append(all_steps)
             
             model.train()
 
@@ -140,7 +140,7 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)#梯度裁剪
             
             #***存储loss用于绘制loss曲线***
-            losses.append(loss.detach().cpu().numpy())
+            train_losses.append(loss.detach().cpu().numpy())
             
             #***优化器进行优化***
             pbar(step, {'loss': loss.item()})
@@ -162,15 +162,15 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
         model.save_pretrained(output_dir)#保存模型
        
         #***训练一个epoch绘制一个Loss曲线***
-        trainloss.train_loss(steps,losses,num,args)
+        trainloss.train_loss(steps=train_steps,losses = train_losses,epoch = num,args = args,type = 'train')
         
         #*****一个epoch训练结束以后，进行验证*****
         print('')
         logger.info(f'****************Valid epoch-{num}****************')
         logger.info("  Num examples = %d", len(valid_data))
         logger.info("  Batch size = %d", args.valid_batch_size)
-        valid(args=args,model=model,device=device,valid_data=valid_data,valid_dataloader=valid_dataloader)
-                    # tokenizer.save_vocabulary(vocab_path=output_dir)
+        valid_steps,valid_losses = valid(args=args,model=model,device=device,valid_data=valid_data,valid_dataloader=valid_dataloader)
+        trainloss.train_loss(steps=valid_steps,losses = valid_losses,epoch = num,args = args,type = 'valid')
 
          #每训练一个epoch清空cuda缓存
         if 'cuda' in str(device):
@@ -187,7 +187,15 @@ def valid(args,model,device,valid_dataloader,valid_data):
     pbar = ProgressBar(n_total=len(valid_dataloader), desc="Evaluating")
 
     labels = []
+    
+    all_steps = 0
+    valid_steps = []
+    valid_losses = []
+    
     for step,batch in enumerate(valid_dataloader):
+        all_steps += 1
+        valid_steps.append(all_steps)
+        
         model.eval()
         batch = tuple(t.to(device) for t in batch)
 
@@ -197,20 +205,13 @@ def valid(args,model,device,valid_dataloader,valid_data):
             outputs = model(**inputs)
 
             #***计算损失***
-            tmp_eval_loss, logits = outputs[:2]#1）tmp_eval_loss是损失函数值。2）logits是模型对验证集的预测概率值，例如二分类时,logits = [0.4,0.6]
+            logits = outputs[1]#1）tmp_eval_loss是损失函数值。2）logits是模型对验证集的预测概率值，例如二分类时,logits = [0.4,0.6]
 
             labels.extend(inputs['labels'])#获取每个batch的真实标签，用于计算混淆矩阵
             preds_list.extend(logits.softmax(-1).detach().cpu().numpy())
-#         if preds is None:
-#             #第一个batch时，preds为空
-#             preds = logits.detach().cpu().numpy()
-#             out_label_ids = inputs['labels'].detach().cpu().numpy()
-#         else:
-#             #自第二个batch开始，将preds进行追加，例如第一个batch的preds为[[0.4,0.6],[0.3,0.7]],第二个batch的preds为[[0.2,0.8],[0.6,0.4]]
-#             #则追加（np.append）以后preds的值为[[0.4,0.6],[0.3,0.7],[0.2,0.8],[0.6,0.4]],其中每一个子list代表一个样本分属两个类别的概率
-#             #最后使用np.argmax对追加后的整个preds进行所有样本的类别判断
-#             preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-#             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+            
+            loss = output[0]
+            valid_losses.append(loss.detach().cpu().numpy())
 
         pbar(step)
 
@@ -222,30 +223,17 @@ def valid(args,model,device,valid_dataloader,valid_data):
     for line in np.array(labels):
         true_label.append(np.array(line.detach().cpu().numpy()))
     
-    pred_labels = np.array(pred_labels)
+    pred_labels = []
+    for line in preds_list:
+        for item in line:
+            pred_labels.append(np.array(np.argmax(item)))
+            
     terget_names = ['一类别','二类别']#一类别对应数据中标签0所对应的实际类别名字，例如数据中类别关系为[‘体育’：0，‘娱乐’：1]，
                                      #则target_names = ['体育','娱乐']
     print('')#避免输出信息都在同一行
     print(classification_report(y_true=true_label, y_pred=pred_label, target_names=target_names))
-#     pred_label = np.argmax(preds, axis=1)
-#     result = compute_metrics(preds=pred_label,labels=out_label_ids)
-#     results.update(result)
-    #***输出该epoch验证集的混淆矩阵***
-    # true_label = labels
-    # pred_label = np.argmax(preds, axis=1)
-    # target_names = ['涉网数据', '非涉网数据']
-    # print(classification_report(y_true=true_label, y_pred=pred_label, target_names=target_names))
-
-
-    print('')#避免输出信息都在同一行
-    #***相关信息***
-#     logger.info("  Num examples = %d", len(valid_data))
-#     logger.info("  Batch size = %d", args.valid_batch_size)
-    #logger.info("******** Eval results {} ********".format(prefix))
-#     for key in sorted(result.keys()):
-#         print(" dev: %s = %s", key, str(result[key]))
-
-#     return results
+    
+    return valid_steps,valid_losses
 
 def predict(predict_model_name_or_path,pre_data,pre_dataloader):
 
