@@ -115,7 +115,7 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
     seed_everything(args.seed)
 
     for num in range(args.num_train_epochs):
-        all_steps = 0
+        train_all_steps = 0
         train_steps = []
         train_losses = []
         
@@ -124,8 +124,8 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
         pbar = ProgressBar(n_total=len(train_dataloader),desc='Train')
         for step,batch in enumerate(train_dataloader):
             #***存储step用于绘制Loss曲线***
-            all_steps += 1
-            train_steps.append(all_steps)
+            train_all_steps += 1
+            train_steps.append(train_all_steps)
             
             model.train()
 
@@ -162,15 +162,15 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
         model.save_pretrained(output_dir)#保存模型
        
         #***训练一个epoch绘制一个Loss曲线***
-        trainloss.train_loss(steps=train_steps,losses = train_losses,epoch = num,args = args,type = 'train')
+        trainloss.train_loss(steps=train_steps,losses = train_losses,epoch = num,args = args,type = 'train',max_step = train_all_steps)
         
         #*****一个epoch训练结束以后，进行验证*****
         print('')
         logger.info(f'****************Valid epoch-{num}****************')
         logger.info("  Num examples = %d", len(valid_data))
         logger.info("  Batch size = %d", args.valid_batch_size)
-        valid_steps,valid_losses = valid(args=args,model=model,device=device,valid_data=valid_data,valid_dataloader=valid_dataloader)
-        trainloss.train_loss(steps=valid_steps,losses = valid_losses,epoch = num,args = args,type = 'valid')
+        valid_steps,valid_losses,valid_all_steps = valid(args=args,model=model,device=device,valid_data=valid_data,valid_dataloader=valid_dataloader)
+        trainloss.train_loss(steps=valid_steps,losses = valid_losses,epoch = num,args = args,type = 'valid',max_steps = valid_all_steps)
 
          #每训练一个epoch清空cuda缓存
         if 'cuda' in str(device):
@@ -193,8 +193,8 @@ def valid(args,model,device,valid_dataloader,valid_data):
     valid_losses = []
     
     for step,batch in enumerate(valid_dataloader):
-        all_steps += 1
-        valid_steps.append(all_steps)
+        valid_all_steps += 1
+        valid_steps.append(valid_all_steps)
         
         model.eval()
         batch = tuple(t.to(device) for t in batch)
@@ -233,7 +233,7 @@ def valid(args,model,device,valid_dataloader,valid_data):
     print('')#避免输出信息都在同一行
     print(classification_report(y_true=true_label, y_pred=pred_label, target_names=target_names))
     
-    return valid_steps,valid_losses
+    return valid_steps,valid_losses,valid_all_steps
 
 def predict(predict_model_name_or_path,pre_data,pre_dataloader):
 
