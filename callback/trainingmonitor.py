@@ -69,17 +69,20 @@ class TrainingMonitor():
                 plt.savefig(str(self.paths[key]))
                 plt.close()
  class TrainLoss():
-    def train_loss(self,steps,losses,epoch,args,type):
+    def train_loss(self,steps,losses,epoch,args,type,max_step):
         plt.plot(steps,losses,'r-')#r代表red红色，-代表实线
         plt.xlabel('step')#设置xy轴的名称
         plt.ylabel('loss')
-        plt.title(f'loss_step in epoch{epoch}')
+        plt.axis([0,max_step,0,1])#1）固定xy轴的刻度，避免每次生成的图因为刻度不一致不方便比较；2）xmin,xmax,ymin,ymax，xmax会随着数据量的变化而变化，此处直接作为参数直接传入，避免每次修改
+        
         save_path = Path(f'{args.output_dir}/train_loss')
         if not save_path.exists():
             os.mkdir(save_path)
         if type == 'train':
+            plt.title(f'loss_step in train_epoch{epoch}')
             plt.savefig(f'{save_path}/loss_step in train_epoch{epoch}.jpg')
         elif type == 'valid':
+            plt.title(f'loss_step in valid_epoch{epoch}')
             plt.savefig(f'{save_path}/loss_step in valid_epoch{epoch}.jpg')
         else:
             raise ValueError
