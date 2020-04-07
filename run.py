@@ -289,6 +289,7 @@ def predict(predict_model_name_or_path,pre_data,pre_dataloader):
     return preds,predict_label
 
 def run(args):
+    seed_everything(args.seed)
 
     if args.do_train == 1:
 
