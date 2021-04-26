@@ -16,13 +16,17 @@ from torch.utils.data import SequentialSampler,DataLoader
 from process.dataprocess import processer
 from process.progressbar import ProgressBar
 from process.dataprocess import collate_fn
+from process.rules import net_relus
+from process.Adversarial_Training import FGM
 
 from metrics.clue_compute_metrics import compute_metrics
 from tools.common import seed_everything
-from process.splitdata import split_data,write_pre_result_to_file
+from process.splitdata import split_data,get_output,write_pre_result_to_file
 
 from callback.progressbar import ProgressBar
 from callback.trainingmonitor import TrainLoss
+
+from configs.config import config
 logger = logging.getLogger()
 
 def load_dataset(args,model_name_or_path,type):
@@ -35,7 +39,7 @@ def load_dataset(args,model_name_or_path,type):
     tokenizer = BertTokenizer.from_pretrained(model_name_or_path)
 
     pro = processer()
-    labellist = pro.get_labels()
+    labellist = pro.get_labels()    
 
     if type == 'train':
         input_file_name_or_path = os.path.join(args.train_file_path,'train.txt')
@@ -48,7 +52,7 @@ def load_dataset(args,model_name_or_path,type):
         batch_size = args.valid_batch_size
 
     elif type == 'test':
-        input_file_name_or_path = os.path.join(args.predict_file_path,'predict.txt')
+        input_file_name_or_path = os.path.join(args.predict_file_path,'test.txt')
         max_seq_len = args.predict_max_seq_len
         batch_size = args.predict_batch_size
 
@@ -101,12 +105,13 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
 
 
     #*****训练过程相关信息*****
-    logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_data))
-    logger.info("  Num Epochs = %d", args.num_train_epochs)
-    logger.info("  Instantaneous batch size per GPU = %d", args.train_batch_size)
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total)
+    print("***** Running training *****")
+    print("  Num examples = %d", len(train_data))
+    print("  Num Epochs = %d", args.num_train_epochs)
+    print("  sequence length = %d", args.train_max_seq_len)
+    print("  Instantaneous batch size per GPU = %d", args.train_batch_size)
+    print("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
+    print("  Total optimization steps = %d", t_total)
 
     #*****开始训练*****
     tr_loss, logging_loss = 0.0, 0.0
@@ -114,34 +119,48 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
     model.zero_grad()
     seed_everything(args.seed)
 
+    fgm = FGM(model)#创建对抗训练类的对象
+    batches = []
+    for batch in train_dataloader:
+        batches.append(batch)
+
+    train_steps = []
+    train_losses = []  # 存储step和loss用于绘制loss曲线图
     for num in range(args.num_train_epochs):
-        train_all_steps = 0
-        train_steps = []
-        train_losses = []
-        
+        print(f'****************Train epoch-{num}****************')
+        train_step = 0  # 代表一个epoch所有的步数
         global_step = 0
-        logger.info(f'****************Train epoch-{num}****************')
         pbar = ProgressBar(n_total=len(train_dataloader),desc='Train')
-        for step,batch in enumerate(train_dataloader):
-            #***存储step用于绘制Loss曲线***
-            train_all_steps += 1
-            train_steps.append(train_all_steps)
-            
+
+        # for step,batch in enumerate(train_dataloader):
+        np.random.shuffle(batches)
+        for step, batch in enumerate(batches):
+            train_step += 1
+            train_steps.append(train_step)#存储step用于绘制loss曲线
+
             model.train()
 
             #***输入模型进行计算***
             batch = tuple(t.to(device) for t in batch)
-            inputs = {'input_ids':batch[0],'attention_mask':batch[1],'token_type_ids':batch[2],'labels':batch[3]}
+            inputs = {'input_ids':batch[0],'attention_mask':batch[1],'token_type_ids':batch[2],'labels':batch[3]} #在Dataset中包含input_ids，attention_mask，token_type_ids，labels，len四个，在DataLoader中使用collate_fn函数在一个Batch中只添加了input_ids，attention_mask，token_type_ids，labels，没有添加len
+
             outputs = model(**inputs)  #模型原文件中已经使用损失函数对输出值和标签值进行了计算，返回的outputs中包含损失函数值
 
             #***损失函数值反向传播***
             loss = outputs[0]
             loss.backward()
+
+            #***对抗训练***
+            fgm.attack()
+            loss_adv = model(**inputs)
+            loss_adv = loss_adv[0]
+            loss_adv.backward()
+            fgm.restore()
+
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)#梯度裁剪
-            
-            #***存储loss用于绘制loss曲线***
-            train_losses.append(loss.detach().cpu().numpy())
-            
+
+            train_losses.append(loss.detach().cpu().numpy())#存储loss，绘制loss曲线
+
             #***优化器进行优化***
             pbar(step, {'loss': loss.item()})
             tr_loss += loss.item()
@@ -151,51 +170,54 @@ def train(args,model_name_or_path,train_data,train_dataloader,valid_data,valid_d
                 model.zero_grad()
                 global_step += 1
 
-               
-        #训练一个epoch保存一个模型
-        output_dir = os.path.join(args.output_dir,f'model_checkpoint_epoch_{num}')
+        #***一个epoch保存一个模型***
+        output_dir = os.path.join(args.output_dir, f'model_checkpoint_epoch_{num}')
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        print('')#避免输出信息都在同一行
-        # logger.info(f'save model checkpoint-{global_step} to {output_dir} ')
-        model.save_pretrained(output_dir)#保存模型
-       
-        #***训练一个epoch绘制一个Loss曲线***
-        trainloss.train_loss(steps=train_steps,losses = train_losses,epoch = num,args = args,type = 'train',max_step = train_all_steps)
-        
+        print('')  # 避免输出信息都在同一行
+        logger.info(f'save model checkpoint-{global_step} to {output_dir} ')
+        model.save_pretrained(output_dir)  # 保存模型
+
+        # ***训练一个epoch绘制一个Loss曲线***
+        print('绘制训练数据loss曲线')
+        trainloss.train_loss(steps=train_steps, losses=train_losses, epoch=num, args=args,type='train')
+
         #*****一个epoch训练结束以后，进行验证*****
         print('')
-        logger.info(f'****************Valid epoch-{num}****************')
-        logger.info("  Num examples = %d", len(valid_data))
-        logger.info("  Batch size = %d", args.valid_batch_size)
-        valid_steps,valid_losses,valid_all_steps = valid(args=args,model=model,device=device,valid_data=valid_data,valid_dataloader=valid_dataloader)
-        trainloss.train_loss(steps=valid_steps,losses = valid_losses,epoch = num,args = args,type = 'valid',max_steps = valid_all_steps)
+        print(f'****************Valid epoch-{num}****************')
+        print("  Num examples = %d", len(valid_data))
+        print("  Batch size = %d", args.valid_batch_size)
+        print("  sequence length = %d", args.valid_max_seq_len)
+        valid_steps,valid_losses,valid_all_steps = valid(model=model,device=device,valid_dataloader=valid_dataloader)
+
+        # ***验证一个epoch绘制一个验证集Loss曲线***
+        print('绘制验证数据loss曲线')
+        trainloss.train_loss(steps=valid_steps, losses=valid_losses, epoch=num, args=args, type='valid',max_step = valid_all_steps)
 
          #每训练一个epoch清空cuda缓存
         if 'cuda' in str(device):
             torch.cuda.empty_cache()
 
 
-def valid(args,model,device,valid_dataloader,valid_data):
+def valid(model,device,valid_dataloader):
 
     #*****开始验证*****
-    preds_list = []
-    results = {}
     preds = None
-    out_label_ids = None
+    # out_label_ids = None
     pbar = ProgressBar(n_total=len(valid_dataloader), desc="Evaluating")
 
     labels = []
-    
-    all_steps = 0
+
+    valid_step = 0  # 代表一个epoch所有的步数
     valid_steps = []
-    valid_losses = []
-    
+    valid_losses = []  # 存储step和loss用于绘制loss曲线图
+
     for step,batch in enumerate(valid_dataloader):
-        valid_all_steps += 1
-        valid_steps.append(valid_all_steps)
-        
+        #***存放step，绘制曲线图***
+        valid_step += 1
+        valid_steps.append(valid_step)  #
+
         model.eval()
         batch = tuple(t.to(device) for t in batch)
 
@@ -205,50 +227,55 @@ def valid(args,model,device,valid_dataloader,valid_data):
             outputs = model(**inputs)
 
             #***计算损失***
-            logits = outputs[1]#1）tmp_eval_loss是损失函数值。2）logits是模型对验证集的预测概率值，例如二分类时,logits = [0.4,0.6]
+            tmp_eval_loss, logits = outputs[:2]#1）tmp_eval_loss是损失函数值。2）logits是模型对验证集的预测概率值，例如二分类时,logits = [0.4,0.6]
 
-            labels.extend(inputs['labels'])#获取每个batch的真实标签，用于计算混淆矩阵
-            preds_list.extend(logits.softmax(-1).detach().cpu().numpy())
-            
-            loss = output[0]
+            labels.extend(inputs['labels'].detach().cpu().numpy())#获取每个batch的真实标签，用于计算混淆矩阵
+
+            #***存放loss，绘制曲线图***
+            loss = outputs[0]
             valid_losses.append(loss.detach().cpu().numpy())
+
+        if preds is None:
+            #第一个batch时，preds为空
+            preds = logits.softmax(-1).detach().cpu().numpy()
+            # out_label_ids = inputs['labels'].detach().cpu().numpy()
+        else:
+            #自第二个batch开始，将preds进行追加，例如第一个batch的preds为[[0.4,0.6],[0.3,0.7]],第二个batch的preds为[[0.2,0.8],[0.6,0.4]]
+            #则追加（np.append）以后preds的值为[[0.4,0.6],[0.3,0.7],[0.2,0.8],[0.6,0.4]],其中每一个子list代表一个样本分属两个类别的概率
+            #最后使用np.argmax对追加后的整个preds进行所有样本的类别判断
+            preds = np.append(preds, logits.softmax(-1).detach().cpu().numpy(), axis=0)
+            # out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
         pbar(step)
 
-        #***每训练完一个epoch，清空cuda缓存***
     if 'cuda' in str(device):
         torch.cuda.empty_cache()
-    
-    true_label = []
-    for line in np.array(labels):
-        true_label.append(np.array(line.detach().cpu().numpy()))
-    
-    pred_labels = []
-    for line in preds_list:
-        for item in line:
-            pred_labels.append(np.array(np.argmax(item)))
-            
-    terget_names = ['一类别','二类别']#一类别对应数据中标签0所对应的实际类别名字，例如数据中类别关系为[‘体育’：0，‘娱乐’：1]，
-                                     #则target_names = ['体育','娱乐']
-    print('')#避免输出信息都在同一行
+
+
+    #***输出该epoch验证集的混淆矩阵***
+    true_label = labels
+    pred_label = np.argmax(preds, axis=1)
+    target_names = ['非涉网案件','涉网案件']
+    print('')
     print(classification_report(y_true=true_label, y_pred=pred_label, target_names=target_names))
-    
-    return valid_steps,valid_losses,valid_all_steps
+    print('')#避免输出信息都在同一行
+
+    return valid_steps,valid_losses,valid_step
 
 def predict(predict_model_name_or_path,pre_data,pre_dataloader):
 
-    logger.info('进行预测')
+    print('进行预测')
     pro = processer()
     labellist = pro.get_labels()
 
     #*****加载模型*****
-    logger.info('加载模型')
+    print('加载模型')
     model = BertForSequenceClassification
     config = BertConfig.from_pretrained(predict_model_name_or_path,num_labels = len(labellist))
     model = model.from_pretrained(predict_model_name_or_path,config=config)
 
 
-    logger.info('模型加载到GPU或者CPU')
+    print('模型加载到GPU或者CPU')
     #如果有GPU，使用GPU进行分布式计算，否则使用CPU
     if torch.cuda.is_available():
         #单GPU计算
@@ -258,8 +285,8 @@ def predict(predict_model_name_or_path,pre_data,pre_dataloader):
         device = torch.device('cpu')
     model.to(device)
 
-    logger.info('******** Running prediction ********')
-    logger.info("  Num examples = %d", len(pre_data))
+    print('******** Running prediction ********')
+    print("  Num examples = %d", len(pre_data))
 
     preds = None
     pbar = ProgressBar(n_total=len(pre_dataloader), desc="Predicting")
@@ -285,42 +312,52 @@ def predict(predict_model_name_or_path,pre_data,pre_dataloader):
 
     predict_label = np.argmax(preds, axis=1)
     print(preds)
+
     print(predict_label)
     return preds,predict_label
 
 def run(args):
-    seed_everything(args.seed)
 
+    seed_everything(args.seed)
     if args.do_train == 1:
 
-        logger.info('划分训练数据和验证数据')
-        split_data(args=args, file_name_or_path=args.file_name_or_path)
+        # print('划分训练数据和验证数据')
+        # split_data(args=args, file_name_or_path=args.file_name_or_path)
 
-        logger.info('加载训练数据和验证数据')
+        print('加载训练数据和验证数据')
         train_data, train_dataloader = load_dataset(args=args,model_name_or_path=args.model_name_or_path,type='train')
         valid_data, valid_dataloader = load_dataset(args=args, model_name_or_path=args.model_name_or_path, type='valid')
-        logger.info('训练数据和验证数据加载完成')
+        print('训练数据和验证数据加载完成')
 
-        logger.info('开始训练')
+        print('开始训练')
         train(args=args,model_name_or_path=args.model_name_or_path,
               train_data=train_data,train_dataloader=train_dataloader,
               valid_data=valid_data,valid_dataloader=valid_dataloader)
-        logger.info('训练结束')
+        print('训练结束')
 
     if args.do_predict == 1:
 
-        logger.info('加载测试数据')
+        print('加载测试数据')
         pre_data,predict_dataloader = load_dataset(args=args,model_name_or_path=args.model_name_or_path,type='test')
-        logger.info('测试数据加载完成')
+        print('测试数据加载完成')
 
-        logger.info('开始预测')
+        print('开始预测')
         preds,predict_label = predict(predict_model_name_or_path=args.predict_model_name_or_path,
                                       pre_data=pre_data,pre_dataloader=predict_dataloader)
-        logger.info('预测完成')
+        print('预测完成')
 
-        logger.info('将预测结果写入文件')
-        write_pre_result_to_file(args=args,preds=preds,predict_label=predict_label,pre_data=pre_data)
-        logger.info('预测结果写入完成')
+        print('形成输出结果形式')
+        target_names = ['非涉网案件', '涉网案件']
+        outputlines = get_output(preds=preds,predict_label=predict_label,pre_data=pre_data,target_names=target_names)
+
+        print('进行规则筛选')
+        relu = net_relus()
+        predict_result = relu.net_relus(nonet_keyword_list=config['nonet_keyword_list'],predict_result=outputlines)
+
+        print('将预测结果写入文件')
+        # predict_result = outputlines
+        write_pre_result_to_file(args=args,output_lines=predict_result)
+        print('预测结果写入完成')
 
 
 def main():
@@ -386,7 +423,7 @@ def main():
                         help="Save checkpoint every X updates steps.")
     parser.add_argument('--seed', type=int, default=42,
                         help="random seed for initialization")
-    parser.add_argument('--valid_size', type=int, default=0.2,
+    parser.add_argument('--valid_size', type=int, default=0.1,
                         help="random seed for initialization")
 
     args = parser.parse_args()
@@ -396,25 +433,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
